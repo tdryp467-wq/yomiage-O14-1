@@ -14,6 +14,7 @@
   --fs:24px;
 }
 body.light{--bg:#fbf6f8;--panel:#fff;--line:#ecd9e1;--text:#2a1d24;--sub:#7d6672;--accent:#c2185b;--accent2:#c2185b}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif;overscroll-behavior:none}
@@ -80,6 +81,41 @@ footer{flex:none;border-top:1px solid var(--line);background:var(--panel);
 .toast.show{opacity:1}
 body.flashnext main{animation:fl .25s}
 @keyframes fl{from{opacity:.3}to{opacity:1}}
+
+/* 横画面：左にスライドと操作、右に原稿 */
+#side{display:none}
+@media (orientation:landscape){
+  body{display:grid;grid-template-columns:minmax(0,38%) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;
+    grid-template-areas:"h h" "s m" "f m"}
+  header{grid-area:h;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:5px 10px 4px}
+  header .row{display:contents}
+  .no{order:1;font-size:14px}
+  .ttl{order:2;flex:1 1 0;min-width:0;font-size:13px}
+  .clock{order:3;font-size:24px;min-width:0}
+  .range{order:4;flex:none;font-size:10px;line-height:1.2;white-space:nowrap}
+  .range b{font-size:11px}
+  #bStart{order:5;padding:6px 10px;font-size:13px}
+  #bReset{order:6;padding:6px 10px;font-size:13px}
+  #bToc{order:7;width:32px;height:32px}
+  #bSet{order:8;width:32px;height:32px}
+  .prog{order:9;flex:0 0 100%;height:3px;margin-top:0}
+  #side{grid-area:s;display:block;min-height:0;overflow:hidden;padding:8px 8px 0 10px;border-right:1px solid var(--line);touch-action:pan-y}
+  #side .thumb{width:100%;height:auto;max-height:100%;object-fit:contain;margin:0}
+  main{grid-area:m;padding:8px 16px calc(12px + env(safe-area-inset-bottom))}
+  .script{line-height:1.6}
+  .meta{margin-top:8px}
+  footer{grid-area:f;padding:6px 8px calc(6px + env(safe-area-inset-bottom)) 10px;border-right:1px solid var(--line);border-top:0}
+  .next{margin:0 2px 5px;font-size:11px}
+  .nav button{height:46px;font-size:17px;border-radius:12px}
+  /* スライド画像を消したときは原稿を全幅に */
+  body.nothumb{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"h" "m" "f"}
+  body.nothumb #side{display:none}
+  body.nothumb footer{display:flex;align-items:center;gap:10px;border-right:0;border-top:1px solid var(--line)}
+  body.nothumb .next{flex:1;min-width:0;margin:0 2px}
+  body.nothumb .nav{flex:none;width:280px}
+  .panel{left:50%;right:auto;transform:translateX(-50%);width:min(560px,100%);max-height:92dvh}
+  .toast{top:30%}
+}
 </style>
 </head>
 <body>
@@ -98,6 +134,8 @@ body.flashnext main{animation:fl .25s}
   </div>
   <div class="prog"><i id="prog"></i></div>
 </header>
+
+<aside id="side"></aside>
 
 <main id="main">
   <img class="thumb" id="thumb" alt="">
@@ -125,7 +163,8 @@ body.flashnext main{animation:fl .25s}
   <div class="set">本番の持ち時間<div class="ctl"><button id="limM">−</button><span id="limV" style="min-width:52px;text-align:center">5:20</span><button id="limP">＋</button></div></div>
   <div class="set">原稿を直す<div class="ctl"><button id="tgEdit">編集</button><button id="bRestore">元に戻す</button></div></div>
   <div class="small">
-    操作：左右スワイプ／下のボタン／Bluetoothリモコン（←→・PageUp/Down・Space）でページ送り。<br>
+    操作：左右スワイプ／ボタン／Bluetoothリモコン（←→・PageUp/Down・Space）でページ送り。<br>
+    スマホを横にすると、左にスライド、右に原稿の2列になります。文字サイズは縦と横で別々に覚えます。<br>
     タイマーは各スライドの予定時刻【0:15-0:50】と比べて、<span style="color:var(--ok)">緑＝予定内</span>・<span style="color:var(--warn)">黄＝このスライドの終了予定を過ぎた</span>・<span style="color:var(--bad)">赤＝持ち時間超過</span> で表示します。<br>
     編集した原稿・設定はこの端末に保存されます。
   </div>
@@ -139,6 +178,8 @@ const KEY='yomiage_O14-1_';
 const store={get(k,d){try{const v=localStorage.getItem(KEY+k);return v===null?d:JSON.parse(v)}catch(e){return d}},
              set(k,v){try{localStorage.setItem(KEY+k,JSON.stringify(v))}catch(e){}}};
 const $=id=>document.getElementById(id);
+const LS=matchMedia('(orientation:landscape)');
+const fsKey=()=>LS.matches?'fsL':'fs';
 
 // 時間範囲を原稿から取り出す
 const toSec=s=>{const[m,x]=s.split(':').map(Number);return m*60+x};
@@ -151,7 +192,7 @@ const slides=DATA.map((d,i)=>{
 const fmt=s=>{s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
 const lastEnd=Math.max(...slides.map(s=>s.end||0));
 
-let st={i:store.get('i',0),fs:store.get('fs',24),thumb:store.get('thumb',true),mark:store.get('mark',false),
+let st={i:store.get('i',0),fs:store.get('fs',24),fsL:store.get('fsL',Math.min(innerWidth,innerHeight)<=520?20:28),thumb:store.get('thumb',true),mark:store.get('mark',false),
         light:store.get('light',false),wake:false,limit:store.get('limit',lastEnd||300),edits:store.get('edits',{})};
 let running=false,t0=0,acc=0,editing=false;
 
@@ -225,12 +266,14 @@ document.addEventListener('keydown',e=>{
   else if(['ArrowLeft','ArrowUp','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(-1)}
 });
 let sx=0,sy=0,stt=0;
-$('main').addEventListener('touchstart',e=>{const t=e.touches[0];sx=t.clientX;sy=t.clientY;stt=Date.now()},{passive:true});
-$('main').addEventListener('touchend',e=>{
-  if(editing)return;
-  const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
-  if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5&&Date.now()-stt<700)go(dx<0?1:-1);
-},{passive:true});
+['main','side'].forEach(id=>{
+  $(id).addEventListener('touchstart',e=>{const t=e.touches[0];sx=t.clientX;sy=t.clientY;stt=Date.now()},{passive:true});
+  $(id).addEventListener('touchend',e=>{
+    if(editing)return;
+    const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5&&Date.now()-stt<700)go(dx<0?1:-1);
+  },{passive:true});
+});
 
 // 目次
 function buildToc(){
@@ -250,21 +293,21 @@ document.querySelectorAll('.sheet').forEach(s=>s.addEventListener('click',e=>{if
 
 // 設定
 function applyLook(){
-  document.documentElement.style.setProperty('--fs',st.fs+'px');
+  document.documentElement.style.setProperty('--fs',st[fsKey()]+'px');
   document.body.classList.toggle('nothumb',!st.thumb);
   document.body.classList.toggle('light',st.light);
   document.querySelector('meta[name=theme-color]').content=st.light?'#fbf6f8':'#1a1218';
 }
 function syncSet(){
-  $('fsV').textContent=st.fs;
+  $('fsV').textContent=st[fsKey()];
   const tg=(id,v,a,b)=>{$(id).textContent=v?a:b;$(id).classList.toggle('on',v)};
   tg('tgThumb',st.thumb,'表示','非表示');tg('tgMark',st.mark,'ON','OFF');
   tg('tgLight',st.light,'ON','OFF');tg('tgWake',st.wake,'ON','OFF');tg('tgEdit',editing,'保存','編集');
   $('limV').textContent=fmt(st.limit);
 }
-const save=()=>{['fs','thumb','mark','light','limit'].forEach(k=>store.set(k,st[k]));applyLook();syncSet();render()};
-$('fsM').onclick=()=>{st.fs=Math.max(14,st.fs-2);save()};
-$('fsP').onclick=()=>{st.fs=Math.min(48,st.fs+2);save()};
+const save=()=>{['fs','fsL','thumb','mark','light','limit'].forEach(k=>store.set(k,st[k]));applyLook();syncSet();render()};
+$('fsM').onclick=()=>{st[fsKey()]=Math.max(14,st[fsKey()]-2);save()};
+$('fsP').onclick=()=>{st[fsKey()]=Math.min(48,st[fsKey()]+2);save()};
 $('tgThumb').onclick=()=>{st.thumb=!st.thumb;save()};
 $('tgMark').onclick=()=>{st.mark=!st.mark;save()};
 $('tgLight').onclick=()=>{st.light=!st.light;save()};
@@ -275,7 +318,7 @@ let pd=0;
 $('main').addEventListener('touchmove',e=>{
   if(e.touches.length!==2)return;
   const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
-  if(pd){const r=d/pd;if(r>1.12||r<0.89){st.fs=Math.min(48,Math.max(14,st.fs+(r>1?2:-2)));pd=d;save()}}else pd=d;
+  if(pd){const r=d/pd;if(r>1.12||r<0.89){st[fsKey()]=Math.min(48,Math.max(14,st[fsKey()]+(r>1?2:-2)));pd=d;save()}}else pd=d;
 },{passive:true});
 $('main').addEventListener('touchend',()=>pd=0,{passive:true});
 
@@ -310,8 +353,15 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1600)}
 
+// 向きに合わせてスライド画像の置き場所を変える
+function placeThumb(){
+  const th=$('thumb');
+  if(LS.matches)$('side').prepend(th);else $('main').prepend(th);
+}
+LS.addEventListener('change',()=>{placeThumb();applyLook();syncSet()});
+
 if(st.i>=slides.length)st.i=0;
-applyLook();render();
+placeThumb();applyLook();render();
 // 初回タップで常時点灯を試みる
 document.addEventListener('click',function f(){wakeOn();document.removeEventListener('click',f)},{once:true});
 </script>
